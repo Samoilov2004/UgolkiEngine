@@ -1,0 +1,40 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.backends.legacy:build"
+
+[project]
+name = "corners-rl"
+version = "0.1.0"
+description = "RL agent (DQN + self-play) for the board game Corners (Уголки)"
+requires-python = ">=3.10"
+dependencies = [
+    "numpy>=1.26",
+    "torch>=2.2",
+    "matplotlib>=3.8",
+    "pandas>=2.2",
+    "tqdm>=4.66",
+    "pyyaml>=6.0",
+    "imageio>=2.34",
+    "seaborn>=0.13",
+    "gymnasium>=0.29",
+]
+
+[project.scripts]
+corners-train    = "corners_rl.scripts.train:main"
+corners-evaluate = "corners_rl.scripts.evaluate:main"
+corners-play     = "corners_rl.scripts.play:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.mypy]
+python_version = "3.10"
+strict = true
+ignore_missing_imports = true
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]
