@@ -170,13 +170,15 @@ class DQNAgent(BaseAgent):
         Returns:
             A fully initialised :class:`DQNAgent`.
         """
-        ckpt = torch.load(path, map_location=device, weights_only=True)
+        from corners_rl.utils.seeding import resolve_device
+        resolved = str(resolve_device(device))
+        ckpt = torch.load(path, map_location=resolved, weights_only=True)
         model = DQNModel()
         model.load_state_dict(ckpt["model_state_dict"])
         saved_epsilon = ckpt.get("epsilon", 0.0)
         return cls(
             model=model,
-            device=device,
+            device=resolved,
             epsilon=epsilon if epsilon is not None else saved_epsilon,
             name=ckpt.get("name", "dqn"),
         )

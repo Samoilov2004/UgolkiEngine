@@ -97,6 +97,9 @@ def _train_config(
     batch_size = min(64, max(8, n))
     # Buffer must accumulate at least batch_size transitions before first update
     train_start_size = batch_size
+    # Warm-start from imitation checkpoint if available
+    imitation_ckpt = Path("outputs/models/imitation.pt")
+    init_ckpt = str(imitation_ckpt) if imitation_ckpt.exists() else None
     return TrainConfig(
         episodes=n,
         max_moves=args.max_moves,
@@ -112,6 +115,7 @@ def _train_config(
         device=args.device,
         seed=seed,
         output_dir=str(run_dir),
+        init_checkpoint=init_ckpt,
         replay=_replay_config(replay_type, n),
     )
 
