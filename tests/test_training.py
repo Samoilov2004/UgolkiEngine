@@ -16,7 +16,12 @@ from corners_rl.env.rules import (
     initial_board,
 )
 from corners_rl.rl.self_play import compute_shaped_reward, state_distance_score
-from corners_rl.rl.train_dqn import SelfPlayTrainer, TrainConfig, config_from_dict
+from corners_rl.rl.train_dqn import (
+    ReplayConfig,
+    SelfPlayTrainer,
+    TrainConfig,
+    config_from_dict,
+)
 
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
@@ -282,3 +287,179 @@ class TestSelfPlayTrainer:
             import torch
             ckpt = torch.load(latest, map_location="cpu", weights_only=True)
             assert "model_state_dict" in ckpt
+
+    def test_csv_has_replay_type_column(self) -> None:
+        import csv
+
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg = _small_config(tmp)
+            SelfPlayTrainer(cfg).train()
+            log_path = Path(tmp) / "logs" / "train_log.csv"
+            with open(log_path) as f:
+                row = next(csv.DictReader(f))
+            assert "replay_type" in row
+
+    def test_csv_uniform_replay_type_value(self) -> None:
+        import csv
+
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg = _small_config(tmp)
+            SelfPlayTrainer(cfg).train()
+            log_path = Path(tmp) / "logs" / "train_log.csv"
+            with open(log_path) as f:
+                rows = list(csv.DictReader(f))
+            assert all(r["replay_type"] == "uniform" for r in rows)
+
+    def test_csv_has_td_error_abs_mean_column(self) -> None:
+        import csv
+
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg = _small_config(tmp)
+            SelfPlayTrainer(cfg).train()
+            log_path = Path(tmp) / "logs" / "train_log.csv"
+            with open(log_path) as f:
+                row = next(csv.DictReader(f))
+            assert "td_error_abs_mean" in row
+
+    def test_checkpoint_stores_replay_type(self) -> None:
+        import torch
+
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg = _small_config(tmp)
+            SelfPlayTrainer(cfg).train()
+            ckpt = torch.load(
+                Path(tmp) / "models" / "dqn_latest.pt",
+                map_location="cpu", weights_only=True,
+            )
+            assert ckpt["replay_type"] == "uniform"
+
+
+# ── SelfPlayTrainer — PER smoke tests ─────────────────────────────────────────
+
+def _small_per_config(output_dir: str) -> TrainConfig:
+    """Minimal PER config for fast smoke tests."""
+    cfg = TrainConfig(
+        episodes=2,
+        max_moves=30,
+        batch_size=8,
+        replay_capacity=500,
+        train_start_size=8,
+        train_every_steps=4,
+        target_update_steps=20,
+        save_every=2,
+        epsilon_start=1.0,
+        epsilon_end=0.5,
+        epsilon_decay_steps=50,
+        device="cpu",
+        seed=0,
+        output_dir=output_dir,
+        replay=ReplayConfig(
+            type="prioritized",
+            alpha=0.6,
+            beta_start=0.4,
+            beta_end=1.0,
+            beta_anneal_steps=1000,
+            priority_epsilon=1e-6,
+        ),
+    )
+    return cfg
+
+
+class TestSelfPlayTrainerPER:
+    def test_train_2_episodes_per_no_crash(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg = _small_per_config(tmp)
+            SelfPlayTrainer(cfg).train()   # must not raise
+
+    def test_per_csv_log_created(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            SelfPlayTrainer(_small_per_config(tmp)).train()
+            assert (Path(tmp) / "logs" / "train_log.csv").exists()
+
+    def test_per_csv_has_replay_type_prioritized(self) -> None:
+        import csv
+
+        with tempfile.TemporaryDirectory() as tmp:
+            SelfPlayTrainer(_small_per_config(tmp)).train()
+            log_path = Path(tmp) / "logs" / "train_log.csv"
+            with open(log_path) as f:
+                rows = list(csv.DictReader(f))
+            assert all(r["replay_type"] == "prioritized" for r in rows)
+
+    def test_per_csv_has_per_beta_column(self) -> None:
+        import csv
+
+        with tempfile.TemporaryDirectory() as tmp:
+            SelfPlayTrainer(_small_per_config(tmp)).train()
+            log_path = Path(tmp) / "logs" / "train_log.csv"
+            with open(log_path) as f:
+                row = next(csv.DictReader(f))
+            assert "per_beta" in row
+            # For PER, per_beta must be a real number, not nan
+            assert row["per_beta"] not in ("nan", "", "NaN")
+
+    def test_per_csv_has_td_error_abs_mean(self) -> None:
+        import csv
+
+        with tempfile.TemporaryDirectory() as tmp:
+            SelfPlayTrainer(_small_per_config(tmp)).train()
+            log_path = Path(tmp) / "logs" / "train_log.csv"
+            with open(log_path) as f:
+                row = next(csv.DictReader(f))
+            assert "td_error_abs_mean" in row
+
+    def test_per_checkpoint_stores_per_metadata(self) -> None:
+        import torch
+
+        with tempfile.TemporaryDirectory() as tmp:
+            SelfPlayTrainer(_small_per_config(tmp)).train()
+            ckpt = torch.load(
+                Path(tmp) / "models" / "dqn_latest.pt",
+                map_location="cpu", weights_only=True,
+            )
+            assert ckpt["replay_type"] == "prioritized"
+            assert "per_alpha" in ckpt
+            assert "per_beta" in ckpt
+
+    def test_per_buffer_is_per_instance(self) -> None:
+        from corners_rl.rl.replay_buffer import PrioritizedReplayBuffer
+
+        with tempfile.TemporaryDirectory() as tmp:
+            trainer = SelfPlayTrainer(_small_per_config(tmp))
+            assert isinstance(trainer.buffer, PrioritizedReplayBuffer)
+
+    def test_per_beta_increases_over_steps(self) -> None:
+        """Beta must be strictly greater than beta_start after training steps."""
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg = _small_per_config(tmp)
+            trainer = SelfPlayTrainer(cfg)
+            initial_beta = trainer._current_beta
+            trainer.train()
+            # beta_anneal_steps=1000; after a few dozen steps beta should have grown
+            assert trainer._current_beta >= initial_beta
+
+
+# ── config_from_dict with replay section ──────────────────────────────────────
+
+class TestConfigFromDictReplay:
+    def test_replay_defaults_to_uniform(self) -> None:
+        cfg = config_from_dict({})
+        assert cfg.replay.type == "uniform"
+
+    def test_replay_section_parsed(self) -> None:
+        d = {"replay": {"type": "prioritized", "alpha": 0.5}}
+        cfg = config_from_dict(d)
+        assert cfg.replay.type == "prioritized"
+        assert cfg.replay.alpha == pytest.approx(0.5)
+
+    def test_replay_missing_fields_get_defaults(self) -> None:
+        cfg = config_from_dict({"replay": {"type": "prioritized"}})
+        assert cfg.replay.beta_start == pytest.approx(0.4)
+
+    def test_replay_unknown_keys_ignored(self) -> None:
+        cfg = config_from_dict({"replay": {"type": "uniform", "unknown": 99}})
+        assert cfg.replay.type == "uniform"
+
+    def test_replay_none_gives_uniform(self) -> None:
+        cfg = config_from_dict({"replay": None})
+        assert cfg.replay.type == "uniform"

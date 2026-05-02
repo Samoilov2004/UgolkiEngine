@@ -1,0 +1,44 @@
+# ──────────────────────────────────────────────────────────────────────────────
+#  DQN + Uniform Experience Replay  (baseline for comparison with PER)
+# ──────────────────────────────────────────────────────────────────────────────
+
+# Episode / game settings
+episodes:   500
+max_moves:  300
+
+# Replay buffer
+replay_capacity: 100000
+train_start_size: 1000
+
+# Mini-batch
+batch_size: 64
+train_every_steps: 1
+
+# Optimisation
+learning_rate: 0.0001
+gamma: 0.99
+
+# Target network
+target_update_steps: 1000
+
+# Epsilon schedule (linear decay)
+epsilon_start: 1.0
+epsilon_end:   0.05
+epsilon_decay_steps: 50000
+
+# Checkpointing
+save_every: 100
+
+# Compute
+device: cpu
+seed: 42
+
+# Output (separate dir so runs don't overwrite each other)
+output_dir: outputs/uniform
+
+# No imitation warm-start by default
+init_checkpoint: ~
+
+# ── Replay strategy ────────────────────────────────────────────────────────────
+replay:
+  type: uniform

@@ -1,0 +1,5 @@
+replay_type,seed,output_dir,final_checkpoint,status,runtime_seconds
+uniform,1,outputs/experiments/test_replay_ablation/uniform_seed_1,outputs/experiments/test_replay_ablation/uniform_seed_1/models/dqn_latest.pt,completed,24.4
+uniform,2,outputs/experiments/test_replay_ablation/uniform_seed_2,outputs/experiments/test_replay_ablation/uniform_seed_2/models/dqn_latest.pt,completed,25.5
+prioritized,1,outputs/experiments/test_replay_ablation/prioritized_seed_1,outputs/experiments/test_replay_ablation/prioritized_seed_1/models/dqn_latest.pt,completed,26.5
+prioritized,2,outputs/experiments/test_replay_ablation/prioritized_seed_2,outputs/experiments/test_replay_ablation/prioritized_seed_2/models/dqn_latest.pt,completed,26.9

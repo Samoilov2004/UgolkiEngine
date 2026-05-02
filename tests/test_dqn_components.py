@@ -26,7 +26,7 @@ from corners_rl.rl.encoding import (
     transform_move_for_player,
 )
 from corners_rl.rl.model import DQNModel, masked_argmax
-from corners_rl.rl.replay_buffer import ReplayBuffer
+from corners_rl.rl.replay_buffer import PrioritizedReplayBuffer, ReplayBuffer
 
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
@@ -280,6 +280,290 @@ class TestReplayBuffer:
     def test_repr(self) -> None:
         buf = ReplayBuffer(capacity=200)
         assert "0/200" in repr(buf)
+
+
+# ── PrioritizedReplayBuffer ───────────────────────────────────────────────────
+
+class TestPrioritizedReplayBuffer:
+    """Tests for PrioritizedReplayBuffer (PER)."""
+
+    # ── Construction / push ───────────────────────────────────────────────────
+
+    def test_initial_length_zero(self) -> None:
+        buf = PrioritizedReplayBuffer(capacity=100)
+        assert len(buf) == 0
+
+    def test_push_increments_size(self) -> None:
+        buf = PrioritizedReplayBuffer(capacity=100)
+        buf.push(**_make_transition())
+        assert len(buf) == 1
+
+    def test_push_multiple(self) -> None:
+        buf = PrioritizedReplayBuffer(capacity=100)
+        for i in range(10):
+            buf.push(**_make_transition(seed=i))
+        assert len(buf) == 10
+
+    def test_capacity_not_exceeded(self) -> None:
+        buf = PrioritizedReplayBuffer(capacity=5)
+        for i in range(20):
+            buf.push(**_make_transition(seed=i))
+        assert len(buf) == 5
+
+    def test_capacity_property(self) -> None:
+        buf = PrioritizedReplayBuffer(capacity=42)
+        assert buf.capacity == 42
+
+    def test_alpha_property(self) -> None:
+        buf = PrioritizedReplayBuffer(capacity=10, alpha=0.7)
+        assert buf.alpha == pytest.approx(0.7)
+
+    # ── Sample: keys and shapes ───────────────────────────────────────────────
+
+    def test_sample_returns_required_keys(self) -> None:
+        buf = PrioritizedReplayBuffer(capacity=100, seed=0)
+        for i in range(20):
+            buf.push(**_make_transition(seed=i))
+        batch = buf.sample(8, beta=0.4)
+        for key in ("states", "actions", "rewards", "next_states",
+                    "dones", "next_legal_masks", "indices", "weights"):
+            assert key in batch, f"Missing key: {key}"
+
+    def test_sample_states_shape(self) -> None:
+        buf = PrioritizedReplayBuffer(capacity=50, seed=0)
+        for i in range(10):
+            buf.push(**_make_transition(seed=i))
+        batch = buf.sample(4, beta=0.4)
+        assert batch["states"].shape == (4, STATE_CHANNELS, BOARD_SIZE, BOARD_SIZE)
+
+    def test_sample_batch_size_matches_request(self) -> None:
+        buf = PrioritizedReplayBuffer(capacity=100, seed=0)
+        for i in range(20):
+            buf.push(**_make_transition(seed=i))
+        batch = buf.sample(8, beta=0.4)
+        assert batch["states"].shape[0] == 8
+
+    def test_sample_tensors_are_torch(self) -> None:
+        buf = PrioritizedReplayBuffer(capacity=50, seed=0)
+        for i in range(10):
+            buf.push(**_make_transition(seed=i))
+        batch = buf.sample(4, beta=0.4)
+        for key in ("states", "actions", "rewards", "next_states",
+                    "dones", "next_legal_masks", "weights"):
+            assert isinstance(batch[key], torch.Tensor), f"{key} is not a Tensor"
+
+    def test_sample_masks_are_bool(self) -> None:
+        buf = PrioritizedReplayBuffer(capacity=50, seed=0)
+        for i in range(10):
+            buf.push(**_make_transition(seed=i))
+        batch = buf.sample(4, beta=0.4)
+        assert batch["next_legal_masks"].dtype == torch.bool
+
+    def test_sample_raises_when_buffer_too_small(self) -> None:
+        buf = PrioritizedReplayBuffer(capacity=100)
+        buf.push(**_make_transition())
+        with pytest.raises(ValueError):
+            buf.sample(10, beta=0.4)
+
+    # ── Indices ───────────────────────────────────────────────────────────────
+
+    def test_sample_returns_indices_as_ndarray(self) -> None:
+        buf = PrioritizedReplayBuffer(capacity=50, seed=0)
+        for i in range(10):
+            buf.push(**_make_transition(seed=i))
+        batch = buf.sample(4, beta=0.4)
+        assert isinstance(batch["indices"], np.ndarray)
+
+    def test_sample_indices_shape(self) -> None:
+        buf = PrioritizedReplayBuffer(capacity=50, seed=0)
+        for i in range(10):
+            buf.push(**_make_transition(seed=i))
+        batch = buf.sample(6, beta=0.4)
+        assert batch["indices"].shape == (6,)
+
+    def test_sample_indices_in_valid_range(self) -> None:
+        buf = PrioritizedReplayBuffer(capacity=50, seed=0)
+        for i in range(10):
+            buf.push(**_make_transition(seed=i))
+        batch = buf.sample(8, beta=0.4)
+        assert (batch["indices"] >= 0).all()
+        assert (batch["indices"] < 10).all()
+
+    # ── IS weights ────────────────────────────────────────────────────────────
+
+    def test_weights_shape(self) -> None:
+        buf = PrioritizedReplayBuffer(capacity=50, seed=0)
+        for i in range(10):
+            buf.push(**_make_transition(seed=i))
+        batch = buf.sample(5, beta=0.4)
+        assert batch["weights"].shape == (5,)
+
+    def test_weights_dtype_float32(self) -> None:
+        buf = PrioritizedReplayBuffer(capacity=50, seed=0)
+        for i in range(10):
+            buf.push(**_make_transition(seed=i))
+        batch = buf.sample(5, beta=0.4)
+        assert batch["weights"].dtype == torch.float32
+
+    def test_weights_in_zero_one_range(self) -> None:
+        """Normalised IS weights must lie in (0, 1]."""
+        buf = PrioritizedReplayBuffer(capacity=50, seed=0)
+        for i in range(10):
+            buf.push(**_make_transition(seed=i))
+        batch = buf.sample(8, beta=0.4)
+        w = batch["weights"]
+        assert (w > 0).all()
+        assert (w <= 1.0 + 1e-6).all()
+
+    def test_weights_max_is_one(self) -> None:
+        """After normalisation the maximum weight in the batch must be 1.0."""
+        buf = PrioritizedReplayBuffer(capacity=50, seed=0)
+        for i in range(10):
+            buf.push(**_make_transition(seed=i))
+        batch = buf.sample(8, beta=0.4)
+        assert float(batch["weights"].max()) == pytest.approx(1.0, abs=1e-5)
+
+    # ── update_priorities ─────────────────────────────────────────────────────
+
+    def test_update_priorities_changes_stored_priorities(self) -> None:
+        buf = PrioritizedReplayBuffer(capacity=50, alpha=1.0,
+                                      priority_epsilon=0.0, seed=0)
+        for i in range(10):
+            buf.push(**_make_transition(seed=i))
+
+        batch = buf.sample(4, beta=0.4)
+        idx = batch["indices"]
+
+        # Assign zero TD errors → priorities become epsilon^alpha = 0
+        buf.update_priorities(idx, np.zeros(len(idx)))
+        assert buf._priorities[idx].max() < 1e-5
+
+    def test_update_priorities_raises_max_priority(self) -> None:
+        buf = PrioritizedReplayBuffer(capacity=50, alpha=1.0,
+                                      priority_epsilon=0.0, seed=0)
+        for i in range(5):
+            buf.push(**_make_transition(seed=i))
+
+        batch = buf.sample(3, beta=0.4)
+        big_errors = np.full(len(batch["indices"]), 999.0)
+        buf.update_priorities(batch["indices"], big_errors)
+        assert buf._max_priority >= 999.0
+
+    def test_update_priorities_accepts_torch_tensor(self) -> None:
+        buf = PrioritizedReplayBuffer(capacity=50, alpha=1.0, seed=0)
+        for i in range(10):
+            buf.push(**_make_transition(seed=i))
+        batch = buf.sample(4, beta=0.4)
+        td_errors = torch.abs(torch.randn(len(batch["indices"])))
+        # Should not raise
+        buf.update_priorities(batch["indices"], td_errors)
+
+    # ── Statistical: high-priority transitions sampled more often ─────────────
+
+    def test_high_priority_sampled_more_often(self) -> None:
+        """A transition with 100× higher priority should appear far more often."""
+        N_TRANSITIONS = 20
+        SPECIAL_IDX   = 3
+        N_SAMPLES     = 2000
+        BATCH         = 10
+
+        buf = PrioritizedReplayBuffer(capacity=100, alpha=1.0,
+                                      priority_epsilon=0.0, seed=42)
+        for i in range(N_TRANSITIONS):
+            buf.push(**_make_transition(seed=i))
+
+        # Assign low priority to all, then spike one transition
+        buf.update_priorities(
+            np.arange(N_TRANSITIONS),
+            np.ones(N_TRANSITIONS) * 0.01,
+        )
+        buf.update_priorities(
+            np.array([SPECIAL_IDX]),
+            np.array([1.0]),   # 100× higher than others
+        )
+
+        counts = np.zeros(N_TRANSITIONS, dtype=np.int64)
+        rng = np.random.default_rng(0)
+        for _ in range(N_SAMPLES):
+            batch = buf.sample(BATCH, beta=0.4)
+            for idx in batch["indices"]:
+                counts[idx] += 1
+
+        # The special transition should be sampled much more than average
+        avg_count = counts.mean()
+        assert counts[SPECIAL_IDX] > avg_count * 5, (
+            f"High-priority transition sampled only {counts[SPECIAL_IDX]} times "
+            f"vs average {avg_count:.1f}"
+        )
+
+    # ── alpha = 0 → approximately uniform ─────────────────────────────────────
+
+    def test_alpha_zero_gives_near_uniform_sampling(self) -> None:
+        """With alpha=0, all (|δ|+ε)^0 = 1 → uniform P(i)."""
+        N_TRANSITIONS = 10
+        N_SAMPLES     = 3000
+        BATCH         = 5
+
+        buf = PrioritizedReplayBuffer(capacity=100, alpha=0.0,
+                                      priority_epsilon=1e-6, seed=7)
+        for i in range(N_TRANSITIONS):
+            buf.push(**_make_transition(seed=i))
+
+        # Assign wildly different TD errors; alpha=0 should make them irrelevant
+        buf.update_priorities(
+            np.arange(N_TRANSITIONS),
+            np.array([0.001, 100.0, 0.001, 100.0, 0.001,
+                      100.0, 0.001, 100.0, 0.001, 100.0]),
+        )
+
+        counts = np.zeros(N_TRANSITIONS, dtype=np.int64)
+        for _ in range(N_SAMPLES):
+            batch = buf.sample(BATCH, beta=0.0)
+            for idx in batch["indices"]:
+                counts[idx] += 1
+
+        total = counts.sum()
+        expected = total / N_TRANSITIONS
+        # Each transition should be within 3 standard deviations of uniform
+        # σ ≈ sqrt(N * p * (1-p)) ≈ sqrt(total * 0.1 * 0.9)
+        tolerance = 4 * np.sqrt(total * 0.1 * 0.9)
+        for i, c in enumerate(counts):
+            assert abs(c - expected) < tolerance, (
+                f"Transition {i}: count={c}, expected≈{expected:.0f}, "
+                f"tolerance={tolerance:.0f} — not uniform enough"
+            )
+
+    # ── stats() ───────────────────────────────────────────────────────────────
+
+    def test_stats_returns_required_keys(self) -> None:
+        buf = PrioritizedReplayBuffer(capacity=50, seed=0)
+        for i in range(5):
+            buf.push(**_make_transition(seed=i))
+        s = buf.stats()
+        for key in ("priority_mean", "priority_max", "priority_min", "priority_std"):
+            assert key in s, f"Missing stats key: {key}"
+
+    def test_stats_max_geq_min(self) -> None:
+        buf = PrioritizedReplayBuffer(capacity=50, seed=0)
+        for i in range(5):
+            buf.push(**_make_transition(seed=i))
+        s = buf.stats()
+        assert s["priority_max"] >= s["priority_min"]
+
+    def test_stats_mean_in_range(self) -> None:
+        buf = PrioritizedReplayBuffer(capacity=50, seed=0)
+        for i in range(5):
+            buf.push(**_make_transition(seed=i))
+        s = buf.stats()
+        assert s["priority_min"] <= s["priority_mean"] <= s["priority_max"]
+
+    # ── repr ──────────────────────────────────────────────────────────────────
+
+    def test_repr(self) -> None:
+        buf = PrioritizedReplayBuffer(capacity=200, alpha=0.6)
+        r = repr(buf)
+        assert "0/200" in r
+        assert "0.6" in r
 
 
 # ── DQNAgent ──────────────────────────────────────────────────────────────────

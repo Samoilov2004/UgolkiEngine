@@ -19,7 +19,7 @@ import yaml
 # Allow running without installing the package
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from corners_rl.rl.train_dqn import SelfPlayTrainer, TrainConfig, config_from_dict
+from corners_rl.rl.train_dqn import SelfPlayTrainer, TrainConfig, config_from_dict, ReplayConfig
 
 
 def parse_args() -> argparse.Namespace:
@@ -68,6 +68,18 @@ def parse_args() -> argparse.Namespace:
             "Produced by scripts/pretrain_imitation.py."
         ),
     )
+    parser.add_argument(
+        "--replay-type",
+        type=str,
+        default=None,
+        dest="replay_type",
+        choices=["uniform", "prioritized"],
+        help=(
+            "Override the replay-buffer strategy from the config. "
+            '"uniform" = standard random sampling; '
+            '"prioritized" = PER (Schaul et al., 2016).'
+        ),
+    )
     return parser.parse_args()
 
 
@@ -97,6 +109,16 @@ def main() -> None:
         config.output_dir = args.output_dir
     if args.init_checkpoint is not None:
         config.init_checkpoint = args.init_checkpoint
+    if args.replay_type is not None:
+        config.replay = ReplayConfig(
+            type=args.replay_type,
+            # Preserve all PER parameters from the loaded config; only override type
+            alpha=config.replay.alpha,
+            beta_start=config.replay.beta_start,
+            beta_end=config.replay.beta_end,
+            beta_anneal_steps=config.replay.beta_anneal_steps,
+            priority_epsilon=config.replay.priority_epsilon,
+        )
 
     logging.info("Training config: %s", config)
 

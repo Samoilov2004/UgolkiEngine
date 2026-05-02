@@ -1,0 +1,18 @@
+\begin{table}
+\caption{Final tournament evaluation results (mean $\pm$ std across seeds). Win Rate and Draw Rate are fractions of total games played.}
+\label{tab:replay_ablation}
+\begin{tabular}{lllll}
+\toprule
+Replay Type & Agent & Win Rate & Draw Rate & Avg Moves \\
+\midrule
+Prioritized & dqn & 0.000 ± 0.000 & 1.000 ± 0.000 & 400.000 ± 0.000 \\
+Prioritized & greedy & 0.333 ± 0.000 & 0.583 ± 0.118 & 281.500 ± 23.099 \\
+Prioritized & heuristic & 0.333 ± 0.000 & 0.417 ± 0.118 & 250.667 ± 48.555 \\
+Prioritized & random & 0.000 ± 0.000 & 0.667 ± 0.000 & 335.000 ± 23.335 \\
+Uniform & dqn & 0.000 ± 0.000 & 1.000 ± 0.000 & 400.000 ± 0.000 \\
+Uniform & greedy & 0.333 ± 0.000 & 0.583 ± 0.118 & 281.500 ± 23.099 \\
+Uniform & heuristic & 0.333 ± 0.000 & 0.417 ± 0.118 & 250.667 ± 48.555 \\
+Uniform & random & 0.000 ± 0.000 & 0.667 ± 0.000 & 335.000 ± 23.335 \\
+\bottomrule
+\end{tabular}
+\end{table}

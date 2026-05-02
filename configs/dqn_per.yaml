@@ -1,0 +1,50 @@
+# ──────────────────────────────────────────────────────────────────────────────
+#  DQN + Prioritized Experience Replay (PER, Schaul et al. 2016)
+#  Identical training settings to dqn_uniform.yaml; only replay section differs.
+# ──────────────────────────────────────────────────────────────────────────────
+
+# Episode / game settings
+episodes:   500
+max_moves:  300
+
+# Replay buffer
+replay_capacity: 100000
+train_start_size: 1000
+
+# Mini-batch
+batch_size: 64
+train_every_steps: 1
+
+# Optimisation
+learning_rate: 0.0001
+gamma: 0.99
+
+# Target network
+target_update_steps: 1000
+
+# Epsilon schedule (linear decay)
+epsilon_start: 1.0
+epsilon_end:   0.05
+epsilon_decay_steps: 50000
+
+# Checkpointing
+save_every: 100
+
+# Compute
+device: cpu
+seed: 42
+
+# Output (separate dir so runs don't overwrite each other)
+output_dir: outputs/per
+
+# No imitation warm-start by default
+init_checkpoint: ~
+
+# ── Replay strategy ────────────────────────────────────────────────────────────
+replay:
+  type:               prioritized
+  alpha:              0.6        # prioritisation exponent (0 = uniform, 1 = full)
+  beta_start:         0.4        # IS-correction exponent at step 0
+  beta_end:           1.0        # IS-correction exponent at end of annealing
+  beta_anneal_steps:  500000     # steps over which beta increases from start→end
+  priority_epsilon:   0.000001   # floor added to |TD error| before raising to alpha

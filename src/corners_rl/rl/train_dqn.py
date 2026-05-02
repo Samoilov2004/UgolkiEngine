@@ -1,4 +1,17 @@
-"""DQN self-play training: config, update step, and Trainer."""
+"""DQN self-play training: config, update step, and Trainer.
+
+Supports two replay strategies controlled by the ``replay`` section in
+the YAML config (or the ``TrainConfig.replay`` field):
+
+* **Uniform** (default) — standard random sampling; loss = SmoothL1.
+* **Prioritized** (PER) — sampling proportional to TD error; loss is
+  IS-weight-corrected SmoothL1; priorities are updated after each
+  gradient step.
+
+References
+----------
+Schaul et al., "Prioritized Experience Replay", ICLR 2016.
+"""
 
 from __future__ import annotations
 
@@ -6,7 +19,7 @@ import copy
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Union
 
 import numpy as np
 import torch
@@ -18,23 +31,48 @@ from corners_rl.rl.encoding import (
     ACTION_SPACE_SIZE,
     BOARD_SIZE,
     STATE_CHANNELS,
-    action_id_to_move,
     encode_action,
     encode_state,
-    inverse_transform_move_for_player,
     legal_action_mask,
     transform_move_for_player,
 )
 from corners_rl.rl.model import DQNModel
-from corners_rl.rl.replay_buffer import ReplayBuffer
+from corners_rl.rl.replay_buffer import PrioritizedReplayBuffer, ReplayBuffer
 from corners_rl.rl.self_play import compute_shaped_reward
 from corners_rl.utils.logging_utils import CSVLogger
 from corners_rl.utils.seeding import resolve_device, seed_everything
 
 log = logging.getLogger(__name__)
 
+# Type alias for either buffer variant
+_AnyBuffer = Union[ReplayBuffer, PrioritizedReplayBuffer]
 
-# ── Configuration ─────────────────────────────────────────────────────────────
+
+# ── Replay configuration ──────────────────────────────────────────────────────
+
+@dataclass
+class ReplayConfig:
+    """Configuration for the experience-replay strategy.
+
+    Attributes:
+        type: ``"uniform"`` or ``"prioritized"``.
+        alpha: PER prioritisation exponent (0 = uniform, 1 = full priority).
+        beta_start: Initial IS-correction exponent (annealed to ``beta_end``).
+        beta_end: Final IS-correction exponent (usually 1.0).
+        beta_anneal_steps: Environment steps over which beta is annealed.
+        priority_epsilon: Floor added to every |TD error| before raising to
+                          ``alpha``, ensuring no transition has zero priority.
+    """
+
+    type:               str   = "uniform"
+    alpha:              float = 0.6
+    beta_start:         float = 0.4
+    beta_end:           float = 1.0
+    beta_anneal_steps:  int   = 500_000
+    priority_epsilon:   float = 1e-6
+
+
+# ── Training configuration ────────────────────────────────────────────────────
 
 @dataclass
 class TrainConfig:
@@ -59,31 +97,36 @@ class TrainConfig:
                 ``"auto"``).
         seed: Global random seed.
         output_dir: Root directory for logs and model checkpoints.
+        init_checkpoint: Optional path to an imitation-learning ``.pt`` file
+                         for warm-start (produced by pretrain_imitation.py).
+        replay: Replay-buffer strategy configuration.
     """
 
-    episodes: int = 200
-    max_moves: int = 300
-    batch_size: int = 64
-    replay_capacity: int = 50_000
-    learning_rate: float = 1e-4
-    gamma: float = 0.99
-    target_update_steps: int = 1_000
-    train_start_size: int = 1_000
-    train_every_steps: int = 1
-    save_every: int = 50
-    epsilon_start: float = 1.0
-    epsilon_end: float = 0.05
-    epsilon_decay_steps: int = 20_000
-    device: str = "cpu"
-    seed: int = 42
-    output_dir: str = "outputs"
-    init_checkpoint: Optional[str] = None   # path to imitation pre-training .pt
+    episodes:             int   = 200
+    max_moves:            int   = 300
+    batch_size:           int   = 64
+    replay_capacity:      int   = 50_000
+    learning_rate:        float = 1e-4
+    gamma:                float = 0.99
+    target_update_steps:  int   = 1_000
+    train_start_size:     int   = 1_000
+    train_every_steps:    int   = 1
+    save_every:           int   = 50
+    epsilon_start:        float = 1.0
+    epsilon_end:          float = 0.05
+    epsilon_decay_steps:  int   = 20_000
+    device:               str   = "cpu"
+    seed:                 int   = 42
+    output_dir:           str   = "outputs"
+    init_checkpoint:      Optional[str] = None
+    replay:               ReplayConfig = field(default_factory=ReplayConfig)
 
 
 def config_from_dict(d: dict) -> TrainConfig:
     """Build a :class:`TrainConfig` from a plain dict (e.g. loaded from YAML).
 
-    Unknown keys are silently ignored.
+    Handles the optional nested ``replay`` sub-dict.  Unknown top-level and
+    nested keys are silently ignored.
 
     Args:
         d: Dict of hyperparameter key → value pairs.
@@ -91,9 +134,19 @@ def config_from_dict(d: dict) -> TrainConfig:
     Returns:
         Populated :class:`TrainConfig`.
     """
-    fields = {f.name for f in TrainConfig.__dataclass_fields__.values()}
-    filtered = {k: v for k, v in d.items() if k in fields}
-    return TrainConfig(**filtered)
+    top_fields = {
+        f.name for f in TrainConfig.__dataclass_fields__.values()
+        if f.name != "replay"
+    }
+    filtered = {k: v for k, v in d.items() if k in top_fields}
+    cfg = TrainConfig(**filtered)
+
+    if isinstance(d.get("replay"), dict):
+        replay_fields = {f.name for f in ReplayConfig.__dataclass_fields__.values()}
+        r = {k: v for k, v in d["replay"].items() if k in replay_fields}
+        cfg.replay = ReplayConfig(**r)
+
+    return cfg
 
 
 # ── DQN update ────────────────────────────────────────────────────────────────
@@ -106,21 +159,26 @@ def dqn_update(
     gamma: float,
     device: torch.device,
     grad_clip: float = 10.0,
-) -> float:
+) -> tuple[float, np.ndarray]:
     """Perform one gradient step on the online network.
 
-    Uses standard DQN targets with legal-action masking on the next state::
+    Computes DQN targets with legal-action masking::
 
-        q_selected = Q_online(s)[a]
-        next_q_max = max_{a legal} Q_target(s')
-        target     = r + γ * next_q_max * (1 − done)
-        loss       = MSE(q_selected, target)
+        q_selected  = Q_online(s)[a]
+        next_q_max  = max_{a legal} Q_target(s')
+        target      = r + γ * next_q_max * (1 − done)
+        td_error    = target − q_selected
+        per_loss    = SmoothL1(q_selected, target)   [no reduction]
+        loss        = mean(IS_weights * per_loss)
 
-    The ``next_legal_masks`` tensor ensures that the bootstrap target only
-    considers legal actions in the next state (or zero for terminal states).
+    When the batch contains no ``"weights"`` key (uniform replay), IS weights
+    default to all-ones, recovering standard DQN.
 
     Args:
-        batch: Dict of tensors as returned by :meth:`~ReplayBuffer.sample`.
+        batch: Transition dict as returned by a replay buffer ``sample``.
+               May optionally contain ``"weights"`` (IS weights from PER) and
+               ``"indices"`` (buffer indices — handled externally by the
+               caller for priority updates).
         online_net: The network being trained.
         target_net: The frozen target network.
         optimizer: Optimiser for *online_net*.
@@ -129,7 +187,8 @@ def dqn_update(
         grad_clip: L2 gradient clipping norm.
 
     Returns:
-        Scalar loss value.
+        Tuple ``(loss_scalar, td_errors_numpy)`` where ``td_errors_numpy``
+        is a 1-D float32 array of per-sample TD errors ``(target − q)``.
     """
     states           = batch["states"].to(device)
     actions          = batch["actions"].to(device)
@@ -138,37 +197,43 @@ def dqn_update(
     dones            = batch["dones"].to(device)
     next_legal_masks = batch["next_legal_masks"].to(device)   # (B, 4096) bool
 
+    # IS weights: all-ones for uniform, provided by PER buffer
+    if "weights" in batch:
+        is_weights = batch["weights"].to(device)              # (B,) float32
+    else:
+        is_weights = torch.ones(states.shape[0], device=device)
+
     # ── Current Q-values ─────────────────────────────────────────────────────
     online_net.train()
-    q_all      = online_net(states)                              # (B, 4096)
-    q_selected = q_all.gather(1, actions.unsqueeze(1)).squeeze(1)  # (B,)
+    q_all      = online_net(states)                               # (B, 4096)
+    q_selected = q_all.gather(1, actions.unsqueeze(1)).squeeze(1) # (B,)
 
-    # ── Target Q-values ───────────────────────────────────────────────────────
+    # ── Target Q-values (no gradient) ────────────────────────────────────────
     with torch.no_grad():
         target_net.eval()
         next_q = target_net(next_states)                         # (B, 4096)
-
-        # Mask illegal next actions with -∞ so they cannot be chosen
         next_q = next_q.masked_fill(~next_legal_masks, float("-inf"))
         next_q_max = next_q.max(dim=1).values                   # (B,)
-
-        # Replace -∞ (terminal / all-illegal) with 0 before Bellman backup
         next_q_max = torch.where(
             torch.isinf(next_q_max),
             torch.zeros_like(next_q_max),
             next_q_max,
         )
-
         targets = rewards + gamma * next_q_max * (~dones).float()
 
-    # ── Gradient update ───────────────────────────────────────────────────────
-    loss = F.mse_loss(q_selected, targets)
+    # ── TD errors (used for PER priority updates) ─────────────────────────────
+    td_errors = (targets - q_selected).detach().cpu().numpy().astype(np.float32)
+
+    # ── IS-weighted SmoothL1 loss ─────────────────────────────────────────────
+    per_sample_loss = F.smooth_l1_loss(q_selected, targets, reduction="none")  # (B,)
+    loss = (is_weights * per_sample_loss).mean()
+
     optimizer.zero_grad()
     loss.backward()
     torch.nn.utils.clip_grad_norm_(online_net.parameters(), max_norm=grad_clip)
     optimizer.step()
 
-    return float(loss.item())
+    return float(loss.item()), td_errors
 
 
 # ── Self-play Trainer ─────────────────────────────────────────────────────────
@@ -181,6 +246,9 @@ class SelfPlayTrainer:
     network always sees the same board topology regardless of which side it is
     playing.
 
+    Supports both **Uniform** and **Prioritized** (PER) replay buffers,
+    controlled by ``config.replay.type``.
+
     Args:
         config: Hyperparameter configuration.
     """
@@ -189,6 +257,8 @@ class SelfPlayTrainer:
         self.config = config
         self.device = resolve_device(config.device)
         seed_everything(config.seed)
+
+        self._is_per: bool = config.replay.type == "prioritized"
 
         # ── Networks ──────────────────────────────────────────────────────────
         self.online_net = DQNModel().to(self.device)
@@ -222,7 +292,25 @@ class SelfPlayTrainer:
                 )
 
         # ── Replay buffer ─────────────────────────────────────────────────────
-        self.buffer = ReplayBuffer(capacity=config.replay_capacity, seed=config.seed)
+        if self._is_per:
+            self.buffer: _AnyBuffer = PrioritizedReplayBuffer(
+                capacity=config.replay_capacity,
+                alpha=config.replay.alpha,
+                priority_epsilon=config.replay.priority_epsilon,
+                seed=config.seed,
+            )
+            log.info(
+                "Using PrioritizedReplayBuffer (α=%.2f, β %.2f→%.2f over %d steps)",
+                config.replay.alpha,
+                config.replay.beta_start,
+                config.replay.beta_end,
+                config.replay.beta_anneal_steps,
+            )
+        else:
+            self.buffer = ReplayBuffer(
+                capacity=config.replay_capacity, seed=config.seed
+            )
+            log.info("Using uniform ReplayBuffer")
 
         # ── Output paths ──────────────────────────────────────────────────────
         self._out = Path(config.output_dir)
@@ -231,8 +319,9 @@ class SelfPlayTrainer:
         self._log_path = self._out / "logs" / "train_log.csv"
 
         # ── State ─────────────────────────────────────────────────────────────
-        self._total_steps: int = 0
+        self._total_steps:   int   = 0
         self._current_epsilon: float = config.epsilon_start
+        self._current_beta:  float = config.replay.beta_start
 
     # ── Public API ────────────────────────────────────────────────────────────
 
@@ -243,62 +332,91 @@ class SelfPlayTrainer:
 
         1. Play a self-play game, collecting transitions into the buffer.
         2. After every environment step (and once the buffer is warm), perform
-           a gradient update.
+           a gradient update (with priority updates for PER).
         3. Periodically hard-copy the online network to the target network.
-        4. Log metrics to CSV.
+        4. Log metrics to CSV (including PER-specific columns).
         5. Save checkpoints.
         """
         with CSVLogger(self._log_path) as csv_log:
             for episode in range(1, self.config.episodes + 1):
-                stats = self._run_episode()
+                stats = self._run_episode(episode)
+
+                # ── Priority / PER stats ──────────────────────────────────────
+                if self._is_per:
+                    pstats = self.buffer.stats()     # type: ignore[union-attr]
+                    p_mean = round(pstats["priority_mean"], 6)
+                    p_max  = round(pstats["priority_max"],  6)
+                    p_std  = round(pstats["priority_std"],  6)
+                    per_alpha = self.config.replay.alpha
+                    per_beta  = round(self._current_beta, 6)
+                else:
+                    p_mean = p_max = p_std = float("nan")
+                    per_alpha = float("nan")
+                    per_beta  = float("nan")
+
                 row = {
-                    "episode":                episode,
-                    "total_steps":            self._total_steps,
-                    "epsilon":                round(self._current_epsilon, 6),
-                    "winner":                 stats["winner"],
-                    "moves":                  stats["moves"],
-                    "total_reward_player1":   round(stats["total_reward_player1"], 4),
-                    "total_reward_player_minus1": round(stats["total_reward_player_minus1"], 4),
-                    "loss_mean":              round(stats["loss_mean"], 6),
-                    "buffer_size":            len(self.buffer),
+                    "episode":                       episode,
+                    "total_steps":                   self._total_steps,
+                    "epsilon":                       round(self._current_epsilon, 6),
+                    "winner":                        stats["winner"],
+                    "moves":                         stats["moves"],
+                    "total_reward_player1":          round(stats["total_reward_player1"], 4),
+                    "total_reward_player_minus1":    round(stats["total_reward_player_minus1"], 4),
+                    "loss_mean":                     round(stats["loss_mean"], 6),
+                    "buffer_size":                   len(self.buffer),
+                    # ── Replay metadata ───────────────────────────────────────
+                    "replay_type":                   self.config.replay.type,
+                    "per_alpha":                     per_alpha,
+                    "per_beta":                      per_beta,
+                    "priority_mean":                 p_mean,
+                    "priority_max":                  p_max,
+                    "priority_std":                  p_std,
+                    # ── TD-error statistics ───────────────────────────────────
+                    "td_error_mean":                 round(stats["td_error_mean"], 6),
+                    "td_error_abs_mean":             round(stats["td_error_abs_mean"], 6),
+                    "td_error_std":                  round(stats["td_error_std"], 6),
                 }
                 csv_log.log(row)
 
                 if episode % max(self.config.save_every, 1) == 0:
-                    self._save_checkpoint(f"ep{episode:06d}")
+                    self._save_checkpoint(f"ep{episode:06d}", episode)
                     log.info(
-                        "ep=%d steps=%d ε=%.4f winner=%s moves=%d "
-                        "loss=%.4f buf=%d",
+                        "ep=%d steps=%d ε=%.4f β=%.4f winner=%s moves=%d "
+                        "loss=%.4f |δ|=%.4f buf=%d",
                         episode,
                         self._total_steps,
                         self._current_epsilon,
+                        self._current_beta if self._is_per else 0.0,
                         stats["winner"],
                         stats["moves"],
                         stats["loss_mean"],
+                        stats["td_error_abs_mean"],
                         len(self.buffer),
                     )
 
-        self._save_checkpoint("latest")
+        self._save_checkpoint("latest", self.config.episodes)
 
     # ── Episode ───────────────────────────────────────────────────────────────
 
-    def _run_episode(self) -> dict:
+    def _run_episode(self, episode: int) -> dict:
         """Play one self-play game and return episode statistics.
 
         Returns:
             Dict with keys: ``winner``, ``moves``, ``total_reward_player1``,
-            ``total_reward_player_minus1``, ``loss_mean``.
+            ``total_reward_player_minus1``, ``loss_mean``,
+            ``td_error_mean``, ``td_error_abs_mean``, ``td_error_std``.
         """
         env = CornersEnv(max_moves=self.config.max_moves)
         env.reset()
 
         total_rewards: dict[int, float] = {1: 0.0, -1: 0.0}
-        losses: list[float] = []
+        losses:        list[float]      = []
+        td_errors_ep:  list[np.ndarray] = []
 
         while not env.is_terminal():
-            player = env.current_player
+            player       = env.current_player
             board_before = env.board
-            real_moves = env.legal_moves()
+            real_moves   = env.legal_moves()
 
             # ── Canonical frame ───────────────────────────────────────────────
             canonical_moves = [
@@ -306,25 +424,23 @@ class SelfPlayTrainer:
             ]
             state_arr = encode_state(board_before, player)
 
-            # ── Select action (epsilon-greedy in canonical frame) ─────────────
+            # ── Select action (epsilon-greedy) ────────────────────────────────
             self.agent.set_epsilon(self._current_epsilon)
-            real_move = self.agent.select_move(env)
+            real_move      = self.agent.select_move(env)
             canonical_move = transform_move_for_player(real_move, player)
-            action_id = encode_action(canonical_move)
+            action_id      = encode_action(canonical_move)
 
             # ── Apply move ────────────────────────────────────────────────────
             board_after, _, done, info = env.step(real_move)
-            winner = info["winner"]
 
-            # ── Shaped reward (from current player's perspective) ─────────────
+            # ── Shaped reward ─────────────────────────────────────────────────
             shaped_r = compute_shaped_reward(
-                board_before, board_after, player, real_move, done, winner
+                board_before, board_after, player, real_move, done, info["winner"]
             )
             total_rewards[player] += shaped_r
 
-            # ── Next-state encoding (from NEXT player's perspective) ──────────
+            # ── Next-state encoding ───────────────────────────────────────────
             if done:
-                # Terminal: next state / mask won't contribute to targets
                 next_state_arr = np.zeros(
                     (STATE_CHANNELS, BOARD_SIZE, BOARD_SIZE), dtype=np.float32
                 )
@@ -350,6 +466,8 @@ class SelfPlayTrainer:
 
             self._total_steps += 1
             self._update_epsilon()
+            if self._is_per:
+                self._update_beta()
 
             # ── Learn ─────────────────────────────────────────────────────────
             can_train = (
@@ -357,8 +475,15 @@ class SelfPlayTrainer:
                 and self._total_steps % self.config.train_every_steps == 0
             )
             if can_train:
-                loss = dqn_update(
-                    self.buffer.sample(self.config.batch_size),
+                if self._is_per:
+                    batch = self.buffer.sample(          # type: ignore[union-attr]
+                        self.config.batch_size, beta=self._current_beta
+                    )
+                else:
+                    batch = self.buffer.sample(self.config.batch_size)
+
+                loss, td_errs = dqn_update(
+                    batch,
                     self.online_net,
                     self.target_net,
                     self.optimizer,
@@ -366,18 +491,36 @@ class SelfPlayTrainer:
                     self.device,
                 )
                 losses.append(loss)
+                td_errors_ep.append(td_errs)
+
+                if self._is_per:
+                    self.buffer.update_priorities(          # type: ignore[union-attr]
+                        batch["indices"], td_errs
+                    )
 
             # ── Sync target network ───────────────────────────────────────────
             if self._total_steps % self.config.target_update_steps == 0:
                 self.target_net.load_state_dict(self.online_net.state_dict())
                 self.target_net.eval()
 
+        # ── Aggregate TD-error stats ──────────────────────────────────────────
+        if td_errors_ep:
+            all_td = np.concatenate(td_errors_ep)
+            td_error_mean     = float(np.mean(all_td))
+            td_error_abs_mean = float(np.mean(np.abs(all_td)))
+            td_error_std      = float(np.std(all_td))
+        else:
+            td_error_mean = td_error_abs_mean = td_error_std = float("nan")
+
         return {
-            "winner": info["winner"],
-            "moves": env.move_count,
-            "total_reward_player1": total_rewards[1],
+            "winner":                   info["winner"],
+            "moves":                    env.move_count,
+            "total_reward_player1":     total_rewards[1],
             "total_reward_player_minus1": total_rewards[-1],
-            "loss_mean": float(np.mean(losses)) if losses else 0.0,
+            "loss_mean":                float(np.mean(losses)) if losses else 0.0,
+            "td_error_mean":            td_error_mean,
+            "td_error_abs_mean":        td_error_abs_mean,
+            "td_error_std":             td_error_std,
         }
 
     # ── Epsilon schedule ──────────────────────────────────────────────────────
@@ -393,22 +536,41 @@ class SelfPlayTrainer:
             cfg.epsilon_start + frac * (cfg.epsilon_end - cfg.epsilon_start)
         )
 
+    # ── Beta schedule (PER) ───────────────────────────────────────────────────
+
+    def _update_beta(self) -> None:
+        """Linear beta annealing from ``beta_start`` to ``beta_end``."""
+        rc = self.config.replay
+        if rc.beta_anneal_steps <= 0:
+            self._current_beta = rc.beta_end
+            return
+        frac = min(self._total_steps / rc.beta_anneal_steps, 1.0)
+        self._current_beta = rc.beta_start + frac * (rc.beta_end - rc.beta_start)
+
     # ── Checkpointing ─────────────────────────────────────────────────────────
 
-    def _save_checkpoint(self, label: str) -> None:
+    def _save_checkpoint(self, label: str, episode: int = 0) -> None:
         """Save the online network and training state.
 
         Args:
-            label: A string appended to the filename
+            label: String appended to the filename
                    (e.g. ``"ep000050"`` or ``"latest"``).
+            episode: Current episode number (stored in the checkpoint).
         """
         path = self._model_dir / f"dqn_{label}.pt"
-        torch.save(
-            {
-                "model_state_dict":  self.online_net.state_dict(),
-                "optimizer_state":   self.optimizer.state_dict(),
-                "total_steps":       self._total_steps,
-                "epsilon":           self._current_epsilon,
-            },
-            path,
-        )
+        payload = {
+            "model_state_dict": self.online_net.state_dict(),
+            "optimizer_state":  self.optimizer.state_dict(),
+            "total_steps":      self._total_steps,
+            "epsilon":          self._current_epsilon,
+            "episode":          episode,
+            # Replay metadata
+            "replay_type":      self.config.replay.type,
+            "per_alpha":        self.config.replay.alpha,
+            "per_beta":         self._current_beta,
+            "per_beta_start":   self.config.replay.beta_start,
+            "per_beta_end":     self.config.replay.beta_end,
+            "per_beta_anneal_steps": self.config.replay.beta_anneal_steps,
+            "priority_epsilon": self.config.replay.priority_epsilon,
+        }
+        torch.save(payload, path)

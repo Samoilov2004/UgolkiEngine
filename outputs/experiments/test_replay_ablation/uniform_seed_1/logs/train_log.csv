@@ -1,0 +1,6 @@
+episode,total_steps,epsilon,winner,moves,total_reward_player1,total_reward_player_minus1,loss_mean,buffer_size,replay_type,per_alpha,per_beta,priority_mean,priority_max,priority_std,td_error_mean,td_error_abs_mean,td_error_std
+1,400,0.05,,400,12.2,13.6,0.449672,400,uniform,nan,nan,nan,nan,nan,0.344518,0.779783,1.245004
+2,800,0.05,,400,8.0,8.0,0.847425,500,uniform,nan,nan,nan,nan,nan,0.417147,1.225228,2.559585
+3,1200,0.05,,400,6.8,10.6,1.364325,500,uniform,nan,nan,nan,nan,nan,0.628369,1.763986,4.271065
+4,1600,0.05,,400,18.0,2.8,3.002607,500,uniform,nan,nan,nan,nan,nan,1.439654,3.445599,8.871561
+5,2000,0.05,,400,7.6,10.8,4.569784,500,uniform,nan,nan,nan,nan,nan,2.137422,5.022812,13.880539
