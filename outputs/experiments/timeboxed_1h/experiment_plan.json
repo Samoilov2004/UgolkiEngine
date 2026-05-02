@@ -1,0 +1,59 @@
+{
+  "benchmark": {
+    "n_bench_episodes": 20,
+    "elapsed_sec": 69.0,
+    "seconds_per_episode": 3.449,
+    "avg_moves_per_episode": 320.6,
+    "device": "mps",
+    "batch_size_bench": 32
+  },
+  "strategy_evaluated": [
+    {
+      "label": "3seeds_500ep",
+      "fits": false,
+      "estimated_min": 181.4
+    },
+    {
+      "label": "3seeds_300ep",
+      "fits": false,
+      "estimated_min": 112.5
+    },
+    {
+      "label": "1seed_500ep",
+      "fits": false,
+      "estimated_min": 60.5
+    },
+    {
+      "label": "2seeds_200ep",
+      "fits": true,
+      "estimated_min": 52.0
+    },
+    {
+      "label": "1seed_200ep",
+      "fits": true,
+      "estimated_min": 26.0
+    }
+  ],
+  "chosen": {
+    "label": "2seeds_200ep",
+    "episodes": 200,
+    "seeds": [
+      1,
+      2
+    ],
+    "replay_types": [
+      "uniform",
+      "prioritized"
+    ],
+    "eval_games": 10,
+    "max_moves": 400,
+    "device": "mps",
+    "n_runs": 4,
+    "estimated_training_sec": 2759,
+    "estimated_eval_sec": 360,
+    "estimated_total_min": 52.0,
+    "training_budget_min": 50,
+    "reason": "2seeds_200ep is the best strategy that fits the 50-min training budget (~52.0 min). With 2 seeds we get minimal statistical context. Strategies with 3 seeds or 500+ episodes exceed the wall-clock limit."
+  },
+  "experiment_start_utc": "2026-05-02T21:08:55Z"
+}

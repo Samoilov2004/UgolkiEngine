@@ -1,0 +1,100 @@
+\documentclass[oneside, a5paper,10pt]{article}
+
+%------------Служебная информация, не меняй----------
+\usepackage[TS1,T2A]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage[english,russian]{babel}
+\usepackage{indentfirst} %отступ в начале параграфа
+\usepackage{amsmath,amsthm,amssymb} %математические библиотеки
+\usepackage{graphicx}%Вставка картинок правильная
+\usepackage{float}%"Плавающие" картинки
+\usepackage{wrapfig}%Обтекание фигур (таблиц, картинок и прочего)
+\usepackage{fancyhdr} %Колонтитул
+\usepackage{geometry}
+\geometry{
+    left=1.5cm,% 1.9
+    top=1.5cm,% 1.5
+    right=1.5cm,% 1.9
+    bottom=1.5cm,% 1.5
+    headsep=0.5cm,%
+    footskip=0.5cm,%
+    includehead,%
+    includefoot}
+\textwidth 110mm
+\textheight 170mm
+\linespread{1.0}
+\setlength{\parskip}{3pt}
+%-----------------------------------------------------
+
+\begin{document}
+%--------Колонтитул конференции - не менять------------
+\pagestyle{fancy}
+\fancyhead{}\fancyfoot{}
+\fancyhead[C]{Мультидисциплинарная молодежная конференция Центрального университета «Научный телеграф»}
+\cfoot{\thepage}
+%------------------------------------------------------
+
+%--------Название статьи, лишнюю строку удали----------
+\centerline{\bf СРАВНЕНИЕ РАВНОМЕРНОГО И ПРИОРИТИЗИРОВАННОГО} %название статьи
+\centerline{\bf EXPERIENCE REPLAY ПРИ ОБУЧЕНИИ DQN-АГЕНТА}
+\centerline{\bf В ИГРЕ «УГОЛКИ»}
+
+\smallskip %отступ
+%--------Информация об авторах -----------------------
+\centerline{\bf}
+\centerline{\bf \ \ А.~А. Самойлов$^{1,*}$}
+\smallskip
+\centerline{$^{1}$ Центральный университет}
+\centerline{$^{*}$\it email: samoilov@centraluniversity.ru}
+%-------------------------------------------------------
+\bigskip %отступ
+
+%--------Аннотация в 3 предложения-----------------------
+В работе сравниваются равномерная (Uniform Replay) и приоритизированная (PER) стратегии выборки из буфера воспроизведения при обучении DQN в игре «Уголки». Реализованы среда на доске~$8\times8$, агенты-базисы и pipeline для multi-seed оценки. Эксперименты выявляют качественно различную динамику TD-ошибки двух стратегий.
+\medskip
+
+%--------Ключевые слова - не более 5-----------------------
+\textit{Ключевые слова:} обучение с подкреплением, DQN, \foreignlanguage{english}{prioritized experience replay}, игровые агенты, \foreignlanguage{english}{self-play}.
+
+\medskip %отступ
+
+\textbf{Актуальность.} DQN~\cite{Mnih15} стабилизирует обучение за счёт \foreignlanguage{english}{experience replay}. Равномерная выборка не учитывает информативность переходов, тогда как PER~\cite{Schaul16} приоритизирует переходы с высокой TD-ошибкой, ускоряя сходимость.
+
+\textbf{Постановка задачи.} Среда~--- доска $8\times8$ c 9~фишками у каждого игрока; разрешены ортогональные ходы и прыжки, диагонали запрещены; цель~--- перенести фишки в противоположный угол. Исследуется, ускоряет ли PER обучение DQN self-play по сравнению с Uniform Replay.
+
+\textbf{Метод.} Состояние кодируется тензором~$3\times8\times8$; нелегальные действия маскируются. Сравниваются два DQN-агента с одинаковой архитектурой и target network, различающиеся только стратегией replay. При PER приоритет и вероятность выборки перехода~$i$:
+\begin{equation}\label{Eq1}
+    p_i = \bigl(|\delta_i|+\varepsilon\bigr)^{\alpha},\quad
+    P(i) = \frac{p_i}{\sum\nolimits_{j} p_j},
+\end{equation}
+где $\delta_i$~--- TD-ошибка, $\varepsilon>0$, $\alpha\in[0,1]$. IS-веса корректируют смещение с анилингом $\beta{:}\ 0{,}4{\to}1{,}0$~\cite{Schaul16}.
+
+\textbf{Экспериментальный протокол.} По 200~эпизодов self-play при 2~random seed. Оценка~--- круговой турнир DQN vs Random, Greedy, Heuristic (10~партий на пару). Метрики: win/draw rate, avg moves, динамика~$|\delta|$ по эпизодам.
+
+\begin{figure}[H] %оформление рисунков
+    \center
+    \includegraphics[width=0.92\linewidth]{figures/td_error_dynamics.png}
+    \caption{Динамика средней абсолютной TD-ошибки~$|\delta|$ за 200~эпизодов self-play (2~seed; линия~--- среднее, область~--- $\pm$std).}
+    \label{fig:td}
+\end{figure}
+
+\textbf{Результаты.} Рис.~\ref{fig:td} демонстрирует разительное различие: $|\delta|$ при PER растёт до~$\approx\!340$ к 200-му эпизоду, тогда как при Uniform Replay остаётся~$\approx\!2{,}8$. При ограниченном числе эпизодов win rate обоих агентов равен нулю; однако draw rate DQN c PER выше и стабильнее ($0{,}98\pm0{,}02$ против $0{,}92\pm0{,}12$), что указывает на различие в выученном поведении.
+
+\textbf{Заключение.} Вклад работы: реализованы среда «Уголки» для RL, агенты-базисы, сравнение Uniform/PER в единых условиях и воспроизводимый evaluation pipeline. Различия в динамике~\eqref{Eq1} подтверждают значимость стратегии replay; итоговая проверка гипотезы о sample efficiency требует экспериментов большего масштаба~\cite{Hessel18}.
+
+\begin{thebibliography}{00}
+
+\setlength{\itemsep}{1.0pt plus 1.0pt}
+
+\bibitem{Mnih15}
+\textit{Mnih V. et al.} Human-level control through deep reinforcement learning // Nature.~--- 2015.~--- Vol.~518.~--- P.~529--533.
+
+\bibitem{Schaul16}
+\textit{Schaul T., Quan J., Antonoglou I., Silver D.} Prioritized Experience Replay // ICLR.~--- 2016.
+
+\bibitem{Hessel18}
+\textit{Hessel M. et al.} Rainbow: Combining Improvements in Deep Reinforcement Learning // AAAI.~--- 2018.~--- P.~3215--3222.
+
+\end{thebibliography}
+
+\end{document}

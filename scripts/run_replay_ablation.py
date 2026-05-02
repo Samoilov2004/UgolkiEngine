@@ -139,11 +139,14 @@ def _load_dqn(checkpoint: Path, device: str, seed: int):
     import torch
     from corners_rl.agents.dqn_agent import DQNAgent
     from corners_rl.rl.model import DQNModel
+    from corners_rl.utils.seeding import resolve_device
 
+    # Resolve "auto" to an actual device string before passing to torch.load
+    resolved = str(resolve_device(device))
     model = DQNModel()
-    ckpt = torch.load(checkpoint, map_location=device, weights_only=True)
+    ckpt = torch.load(checkpoint, map_location=resolved, weights_only=True)
     model.load_state_dict(ckpt["model_state_dict"])
-    return DQNAgent(model=model, device=device, epsilon=0.0, seed=seed)
+    return DQNAgent(model=model, device=resolved, epsilon=0.0, seed=seed)
 
 
 # ── Evaluation ────────────────────────────────────────────────────────────────

@@ -540,7 +540,36 @@ python scripts/run_full_experiment.py \
 
 ---
 
-## 17. Возможные направления развития
+## 17. Time-boxed эксперимент: Uniform Replay vs PER (1 час)
+
+Для быстрой проверки гипотезы о sample efficiency PER был проведён
+автономный time-boxed эксперимент (лимит 1 час, `device=mps`).
+
+**Запуск:**
+```bash
+python scripts/run_replay_ablation.py \
+  --episodes 200 --seeds 1 2 --device auto \
+  --max-moves 400 --eval-games 10 \
+  --out outputs/experiments/timeboxed_1h/replay_ablation
+
+python scripts/plot_replay_ablation.py \
+  --experiment-dir outputs/experiments/timeboxed_1h/replay_ablation \
+  --out outputs/experiments/timeboxed_1h/figures
+```
+
+**Параметры:** 200 эпизодов × 2 seeds × 2 replay types = 4 запуска;
+фактическое время — **44.3 мин** (fit в бюджет).
+
+**Результат:** при 200 эпизодах ни Uniform, ни PER не выходят за нулевой
+win rate. PER демонстрирует быстрый рост TD-ошибки (289 vs 2.7 на ep=200),
+что указывает на нестабильность при коротком обучении. Полный отчёт:
+[`outputs/experiments/timeboxed_1h/REPORT.md`](outputs/experiments/timeboxed_1h/REPORT.md).
+
+**Для полноценного сравнения** рекомендуется `--episodes 2000 --seeds 1 2 3`.
+
+---
+
+## 18. Возможные направления развития
 
 - **AlphaZero-style MCTS + policy/value network** — заменить ε-greedy DQN на MCTS с нейросетевым оракулом.
 - **Точное кодирование chain jumps** — хранить полный путь цепочки в action_id (например, через список промежуточных клеток).
@@ -553,7 +582,7 @@ python scripts/run_full_experiment.py \
 
 ---
 
-## 18. Литература
+## 19. Литература
 
 - Mnih et al., 2015 — [Human-level control through deep reinforcement learning](https://www.nature.com/articles/nature14236). *Nature*, 518, 529–533.
 - Silver et al., 2017 — [Mastering Chess and Shogi by Self-Play with a General Reinforcement Learning Algorithm](https://arxiv.org/abs/1712.01815). *arXiv:1712.01815*.

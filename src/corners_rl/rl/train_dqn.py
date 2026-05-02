@@ -219,7 +219,13 @@ def dqn_update(
             torch.zeros_like(next_q_max),
             next_q_max,
         )
-        targets = rewards + gamma * next_q_max * (~dones).float()
+        # ── Negamax bootstrapping (zero-sum self-play) ────────────────────────
+        # next_state is encoded from the OPPONENT's perspective because after
+        # player P moves, it becomes the opponent's turn.  The Q-network applied
+        # to next_state therefore gives the opponent's best expected value.
+        # In a zero-sum game: V(s for P) = −V(s for opponent), so we SUBTRACT
+        # the opponent's bootstrap value rather than adding it.
+        targets = rewards - gamma * next_q_max * (~dones).float()
 
     # ── TD errors (used for PER priority updates) ─────────────────────────────
     td_errors = (targets - q_selected).detach().cpu().numpy().astype(np.float32)
