@@ -1,61 +1,51 @@
-"""Abstract base class for all agents."""
+"""Abstract base class for all Corners agents."""
 
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Optional
+from typing import TYPE_CHECKING
 
-from corners_rl.env.board import Board, Move
+if TYPE_CHECKING:
+    from corners_rl.env.corners_env import CornersEnv
+    from corners_rl.env.moves import Move
 
 
 class BaseAgent(ABC):
-    """Common interface for all agents (baselines and learned).
+    """Interface that every agent must implement.
 
-    All agents must implement :meth:`select_action`.  Training-capable agents
-    should also implement :meth:`observe` for receiving transitions.
+    An agent is a stateless (or episode-stateful) policy: given the current
+    environment it returns a legal move.
+
+    The environment is passed directly so the agent can call
+    :meth:`~corners_rl.env.corners_env.CornersEnv.legal_moves` and read
+    :attr:`~corners_rl.env.corners_env.CornersEnv.current_player` without the
+    caller having to forward those values separately.
 
     Args:
-        player: The player this agent controls (``1`` or ``-1``).
-        name: Human-readable agent name (used in logs and tournament tables).
+        name: Human-readable label used in logs and results tables.
     """
 
-    def __init__(self, player: int, name: str = "agent") -> None:
-        self.player = player
-        self.name = name
+    def __init__(self, name: str) -> None:
+        self._name = name
+
+    @property
+    def name(self) -> str:
+        """Human-readable agent name."""
+        return self._name
 
     @abstractmethod
-    def select_action(self, board: Board, legal_moves: list[Move]) -> Move:
-        """Choose a move given the current board and list of legal moves.
+    def select_move(self, env: "CornersEnv") -> "Move":
+        """Choose a move for the current player.
 
         Args:
-            board: Current board state (read-only; do not modify).
-            legal_moves: Non-empty list of legal moves for this agent.
+            env: The live environment.  The agent must **not** call
+                 :meth:`~corners_rl.env.corners_env.CornersEnv.step` on it;
+                 it should only read state.
 
         Returns:
-            The chosen :class:`~corners_rl.env.board.Move`.
+            A move that appears in ``env.legal_moves()``.
         """
         ...
 
-    def observe(
-        self,
-        board: Board,
-        move: Move,
-        reward: float,
-        next_board: Board,
-        done: bool,
-    ) -> None:
-        """Receive a transition for learning (no-op for non-learning agents).
-
-        Args:
-            board: Board state before the move.
-            move: The move that was applied.
-            reward: Reward received.
-            next_board: Board state after the move.
-            done: Whether the episode ended.
-        """
-
-    def reset(self) -> None:
-        """Reset any episode-level internal state (called at episode start)."""
-
     def __repr__(self) -> str:
-        return f"{self.__class__.__name__}(player={self.player}, name={self.name!r})"
+        return f"{self.__class__.__name__}(name={self._name!r})"

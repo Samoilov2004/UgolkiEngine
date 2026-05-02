@@ -1,55 +1,38 @@
-# ─────────────────────────────────────────────
-#  DQN + Self-Play — default configuration
-# ─────────────────────────────────────────────
+# ──────────────────────────────────────────────────────────────────────────────
+#  DQN Self-Play — training configuration
+#  Designed for a quick first run on CPU (200 episodes, ~5-15 minutes).
+# ──────────────────────────────────────────────────────────────────────────────
 
-env:
-  board_size: 8
-  zone_size: 3          # 3×3 start/goal zones
-  max_steps: 500        # max half-moves before draw
-  reward:
-    win: 1.0
-    lose: -1.0
-    draw: 0.0
-    step_penalty: -0.001   # small penalty per step to encourage speed
-    progress_bonus: 0.01   # bonus proportional to pieces closer to goal
+# Episode / game settings
+episodes:   200       # total self-play episodes
+max_moves:  300       # max half-moves per game before draw
 
-agent:
-  # Network
-  hidden_dim: 256
-  num_layers: 4
-  # DQN hyperparameters
-  gamma: 0.99
-  lr: 1.0e-4
-  epsilon_start: 1.0
-  epsilon_end: 0.05
-  epsilon_decay_steps: 200_000
-  target_update_freq: 1000   # steps between hard target-net updates
-  double_dqn: true
-  # Replay buffer
-  buffer_size: 100_000
-  batch_size: 256
-  min_buffer_size: 5_000     # start training only after this many transitions
+# Replay buffer
+replay_capacity: 50000
+train_start_size: 1000   # start gradient updates once buffer reaches this size
 
-training:
-  total_episodes: 50_000
-  checkpoint_dir: checkpoints/
-  checkpoint_interval: 1_000  # episodes
-  log_interval: 100           # episodes
-  device: auto                # "cpu" | "cuda" | "mps" | "auto"
+# Mini-batch
+batch_size: 64
+train_every_steps: 1     # gradient step every N environment steps
 
-self_play:
-  enabled: true
-  pool_size: 10               # number of past checkpoints kept in opponent pool
-  swap_interval: 500          # episodes between opponent swaps
-  win_rate_threshold: 0.55    # promote new checkpoint to pool if win-rate > this
+# Optimisation
+learning_rate: 0.0001
+gamma: 0.99              # Bellman discount factor
 
-evaluation:
-  interval: 1_000             # episodes between evaluation rounds
-  episodes_per_opponent: 100  # games played against each baseline
-  opponents:
-    - random
-    - greedy
+# Target network
+target_update_steps: 1000   # hard-copy online → target every N steps
 
-visualization:
-  save_dir: plots/
-  gif_fps: 4
+# Epsilon schedule (linear decay)
+epsilon_start: 1.0
+epsilon_end:   0.05
+epsilon_decay_steps: 20000  # steps over which epsilon decays from start→end
+
+# Checkpointing
+save_every: 50          # save model checkpoint every N episodes
+
+# Compute
+device: cpu             # "cpu" | "cuda" | "mps" | "auto"
+seed: 42
+
+# Output directory (logs go to output_dir/logs/, models to output_dir/models/)
+output_dir: outputs
