@@ -8,11 +8,13 @@ A research project training a DQN agent with self-play to play the classic board
 - Each player has **9 pieces** placed in a 3×3 corner zone at game start
 - **Player 1** starts in the top-left corner, goal is the bottom-right 3×3 zone
 - **Player -1** starts in the bottom-right corner, goal is the top-left 3×3 zone
-- **Legal moves:**
-  - Simple step to any adjacent free cell (8 directions)
-  - Jump over any piece (own or opponent) to the free cell immediately beyond it
-  - Chain jumps are allowed in a single turn (multiple hops)
-  - Jumped pieces are **not** captured
+- **Legal moves — orthogonal only, no diagonal moves or jumps:**
+  - Simple step: move to an orthogonally adjacent free cell (up / down / left / right, distance 1)
+  - Jump: hop over an **occupied** orthogonally adjacent cell to the free cell immediately beyond it (distance 2)
+  - Chain jump: a sequence of jumps in one turn; every segment must be an orthogonal jump
+  - Jumped pieces are **not** captured; simple steps cannot be mixed into a chain
+  - **Diagonal moves and jumps are strictly forbidden**
+- Every move is validated by `validate_move()` before application — no agent or DQN inference can produce an illegal board state
 - **Win condition:** all 9 of your pieces occupy the opponent's starting zone
 
 ## Project Structure
@@ -40,6 +42,12 @@ pip install -r requirements.txt
 ```
 
 ## Quick Start
+
+### Verify game rules (orthogonality check)
+
+```bash
+python scripts/check_rules.py --games 50 --max-moves 300
+```
 
 ### Train DQN agent with self-play
 
