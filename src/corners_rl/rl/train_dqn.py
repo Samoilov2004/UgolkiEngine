@@ -77,6 +77,7 @@ class TrainConfig:
     device: str = "cpu"
     seed: int = 42
     output_dir: str = "outputs"
+    init_checkpoint: Optional[str] = None   # path to imitation pre-training .pt
 
 
 def config_from_dict(d: dict) -> TrainConfig:
@@ -205,6 +206,20 @@ class SelfPlayTrainer:
             epsilon=config.epsilon_start,
             seed=config.seed,
         )
+
+        # ── Load imitation pre-training checkpoint (warm start) ───────────────
+        if config.init_checkpoint:
+            ckpt_path = Path(config.init_checkpoint)
+            if ckpt_path.exists():
+                ckpt = torch.load(ckpt_path, map_location=self.device)
+                self.online_net.load_state_dict(ckpt["model_state_dict"])
+                self.target_net.load_state_dict(ckpt["model_state_dict"])
+                log.info("Loaded imitation checkpoint from %s", ckpt_path)
+            else:
+                log.warning(
+                    "init_checkpoint not found: %s — starting from scratch.",
+                    ckpt_path,
+                )
 
         # ── Replay buffer ─────────────────────────────────────────────────────
         self.buffer = ReplayBuffer(capacity=config.replay_capacity, seed=config.seed)

@@ -36,3 +36,8 @@ seed: 42
 
 # Output directory (logs go to output_dir/logs/, models to output_dir/models/)
 output_dir: outputs
+
+# Optional: path to an imitation-learning warm-start checkpoint.
+# Set to the output of scripts/pretrain_imitation.py, or leave null to skip.
+# init_checkpoint: outputs/models/imitation.pt
+init_checkpoint: ~

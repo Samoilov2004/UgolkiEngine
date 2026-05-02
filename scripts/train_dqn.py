@@ -58,6 +58,16 @@ def parse_args() -> argparse.Namespace:
         dest="output_dir",
         help="Override output directory for logs and checkpoints.",
     )
+    parser.add_argument(
+        "--init-checkpoint",
+        type=str,
+        default=None,
+        dest="init_checkpoint",
+        help=(
+            "Path to an imitation-learning checkpoint (.pt) for warm-start. "
+            "Produced by scripts/pretrain_imitation.py."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -85,6 +95,8 @@ def main() -> None:
         config.seed = args.seed
     if args.output_dir is not None:
         config.output_dir = args.output_dir
+    if args.init_checkpoint is not None:
+        config.init_checkpoint = args.init_checkpoint
 
     logging.info("Training config: %s", config)
 
