@@ -1,0 +1,7 @@
+replay_type,seed,output_dir,final_checkpoint,status,runtime_seconds
+uniform,3,outputs/experiments/extra_seeds/uniform_seed_3,outputs/experiments/extra_seeds/uniform_seed_3/models/dqn_latest.pt,completed,3635.7
+uniform,4,outputs/experiments/extra_seeds/uniform_seed_4,outputs/experiments/extra_seeds/uniform_seed_4/models/dqn_latest.pt,completed,5196.6
+uniform,5,outputs/experiments/extra_seeds/uniform_seed_5,outputs/experiments/extra_seeds/uniform_seed_5/models/dqn_latest.pt,completed,3842.9
+prioritized,3,outputs/experiments/extra_seeds/prioritized_seed_3,,failed: RuntimeError: Parent directory outputs/experiments/extra_seeds/prioritized_seed_3/models does not exist.,4310.3
+prioritized,4,outputs/experiments/extra_seeds/prioritized_seed_4,,failed: RuntimeError: Parent directory outputs/experiments/extra_seeds/prioritized_seed_4/models does not exist.,3288.7
+prioritized,5,outputs/experiments/extra_seeds/prioritized_seed_5,,failed: RuntimeError: Parent directory outputs/experiments/extra_seeds/prioritized_seed_5/models does not exist.,1383.5
