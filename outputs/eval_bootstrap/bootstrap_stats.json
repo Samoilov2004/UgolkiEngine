@@ -1,0 +1,114 @@
+{
+  "uniform": {
+    "random": {
+      "mean": 0.455,
+      "ci_lo": 0.4325,
+      "ci_hi": 0.4765,
+      "n": 2000
+    },
+    "greedy": {
+      "mean": 0.1185,
+      "ci_lo": 0.1045,
+      "ci_hi": 0.1325,
+      "n": 2000
+    },
+    "heuristic": {
+      "mean": 0.1315,
+      "ci_lo": 0.117,
+      "ci_hi": 0.1465,
+      "n": 2000
+    },
+    "overall": {
+      "mean": 0.235,
+      "ci_lo": 0.2245,
+      "ci_hi": 0.246,
+      "n": 6000
+    }
+  },
+  "prioritized": {
+    "random": {
+      "mean": 0.3765,
+      "ci_lo": 0.355,
+      "ci_hi": 0.3975,
+      "n": 2000
+    },
+    "greedy": {
+      "mean": 0.077,
+      "ci_lo": 0.0655,
+      "ci_hi": 0.089,
+      "n": 2000
+    },
+    "heuristic": {
+      "mean": 0.0685,
+      "ci_lo": 0.0575,
+      "ci_hi": 0.08,
+      "n": 2000
+    },
+    "overall": {
+      "mean": 0.174,
+      "ci_lo": 0.1645,
+      "ci_hi": 0.18333749999999993,
+      "n": 6000
+    }
+  },
+  "per_seed": {
+    "uniform_s1": {
+      "mean": 0.19933333333333333,
+      "ci_lo": 0.185,
+      "ci_hi": 0.214,
+      "n": 3000
+    },
+    "uniform_s2": {
+      "mean": 0.27066666666666667,
+      "ci_lo": 0.255,
+      "ci_hi": 0.2866666666666667,
+      "n": 3000
+    },
+    "prioritized_s1": {
+      "mean": 0.13233333333333333,
+      "ci_lo": 0.12,
+      "ci_hi": 0.14433333333333334,
+      "n": 3000
+    },
+    "prioritized_s2": {
+      "mean": 0.21566666666666667,
+      "ci_lo": 0.20133333333333334,
+      "ci_hi": 0.23033333333333333,
+      "n": 3000
+    }
+  },
+  "head_to_head": {
+    "uniform_wr": {
+      "mean": 0.0,
+      "ci_lo": 0.0,
+      "ci_hi": 0.0,
+      "n": 1000
+    }
+  },
+  "difference_ci": {
+    "random": {
+      "diff_mean": 0.07859470000000002,
+      "ci_lo": 0.0474875,
+      "ci_hi": 0.10949999999999999,
+      "ci_contains_zero": false
+    },
+    "greedy": {
+      "diff_mean": 0.041430299999999996,
+      "ci_lo": 0.022500000000000006,
+      "ci_hi": 0.06,
+      "ci_contains_zero": false
+    },
+    "heuristic": {
+      "diff_mean": 0.06271800000000001,
+      "ci_lo": 0.0445,
+      "ci_hi": 0.08099999999999999,
+      "ci_contains_zero": false
+    },
+    "overall": {
+      "diff_mean": 0.06105115,
+      "ci_lo": 0.046499999999999986,
+      "ci_hi": 0.07533333333333334,
+      "ci_contains_zero": false
+    }
+  }
+}
