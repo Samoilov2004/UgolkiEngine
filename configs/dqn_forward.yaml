@@ -1,0 +1,35 @@
+# ──────────────────────────────────────────────────────────────────────────────
+#  DQN Self-Play — forward-only action masking
+#  Pieces may only move toward the target zone (Δrow ≥ 0 AND Δcol ≥ 0 for
+#  Player 1; mirrored for Player -1).  Falls back to all legal moves when no
+#  forward move exists (end-game shuffling inside the target zone).
+# ──────────────────────────────────────────────────────────────────────────────
+
+episodes:   200
+max_moves:  300
+
+replay_capacity: 50000
+train_start_size: 1000
+
+batch_size: 64
+train_every_steps: 1
+
+learning_rate: 0.0001
+gamma: 0.99
+
+target_update_steps: 1000
+
+epsilon_start: 1.0
+epsilon_end:   0.05
+epsilon_decay_steps: 20000
+
+save_every: 50
+
+device: cpu
+seed: 42
+
+output_dir: outputs/forward
+
+init_checkpoint: ~
+
+forward_only: true

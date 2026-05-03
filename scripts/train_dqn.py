@@ -80,6 +80,17 @@ def parse_args() -> argparse.Namespace:
             '"prioritized" = PER (Schaul et al., 2016).'
         ),
     )
+    parser.add_argument(
+        "--forward-only",
+        action="store_true",
+        default=False,
+        dest="forward_only",
+        help=(
+            "Restrict moves to those whose net displacement goes toward the "
+            "target zone (Δrow ≥ 0 AND Δcol ≥ 0 for Player 1). "
+            "Falls back to all legal moves when no forward move exists."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -119,6 +130,8 @@ def main() -> None:
             beta_anneal_steps=config.replay.beta_anneal_steps,
             priority_epsilon=config.replay.priority_epsilon,
         )
+    if args.forward_only:
+        config.forward_only = True
 
     logging.info("Training config: %s", config)
 

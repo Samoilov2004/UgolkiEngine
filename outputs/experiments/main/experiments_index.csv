@@ -1,5 +1,0 @@
-replay_type,seed,output_dir,final_checkpoint,status,runtime_seconds
-uniform,1,outputs/experiments/main/uniform_seed_1,outputs/experiments/main/uniform_seed_1/models/dqn_latest.pt,completed,2848.2
-uniform,2,outputs/experiments/main/uniform_seed_2,outputs/experiments/main/uniform_seed_2/models/dqn_latest.pt,completed,2861.3
-prioritized,1,outputs/experiments/main/prioritized_seed_1,outputs/experiments/main/prioritized_seed_1/models/dqn_latest.pt,completed,3107.8
-prioritized,2,outputs/experiments/main/prioritized_seed_2,outputs/experiments/main/prioritized_seed_2/models/dqn_latest.pt,completed,2984.5

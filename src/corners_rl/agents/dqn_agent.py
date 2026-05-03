@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Optional, Union
 import torch
 
 from corners_rl.agents.base import BaseAgent
+from corners_rl.env.moves import filter_forward_moves
 from corners_rl.rl.encoding import (
     ACTION_SPACE_SIZE,
     action_id_to_move,
@@ -50,12 +51,14 @@ class DQNAgent(BaseAgent):
         epsilon: float = 1.0,
         name: str = "dqn",
         seed: Optional[int] = None,
+        forward_only: bool = False,
     ) -> None:
         super().__init__(name)
         self._device = torch.device(device)
         self._model  = (model or DQNModel()).to(self._device)
         self._epsilon = float(epsilon)
         self._rng = random.Random(seed)
+        self._forward_only = forward_only
 
     # ── BaseAgent interface ───────────────────────────────────────────────────
 
@@ -90,6 +93,9 @@ class DQNAgent(BaseAgent):
                 f"No legal moves for player {player}. "
                 "Board may be in a degenerate state."
             )
+
+        if self._forward_only:
+            real_moves = filter_forward_moves(real_moves, player)
 
         # ── canonical frame ───────────────────────────────────────────────
         canonical_moves = [
@@ -159,6 +165,7 @@ class DQNAgent(BaseAgent):
         path: Union[Path, str],
         device: Union[str, torch.device] = "cpu",
         epsilon: Optional[float] = None,
+        forward_only: bool = False,
     ) -> "DQNAgent":
         """Load a :class:`DQNAgent` from a checkpoint file.
 
@@ -166,6 +173,7 @@ class DQNAgent(BaseAgent):
             path: Path to a checkpoint saved with :meth:`save`.
             device: Device on which to load the model.
             epsilon: Override the saved epsilon (useful to force greedy play).
+            forward_only: Restrict moves to those going toward the target zone.
 
         Returns:
             A fully initialised :class:`DQNAgent`.
@@ -181,6 +189,7 @@ class DQNAgent(BaseAgent):
             device=resolved,
             epsilon=epsilon if epsilon is not None else saved_epsilon,
             name=ckpt.get("name", "dqn"),
+            forward_only=forward_only,
         )
 
     def __repr__(self) -> str:

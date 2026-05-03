@@ -27,6 +27,7 @@ import torch.nn.functional as F
 
 from corners_rl.agents.dqn_agent import DQNAgent
 from corners_rl.env.corners_env import CornersEnv
+from corners_rl.env.moves import filter_forward_moves
 from corners_rl.rl.encoding import (
     ACTION_SPACE_SIZE,
     BOARD_SIZE,
@@ -120,6 +121,7 @@ class TrainConfig:
     output_dir:           str   = "outputs"
     init_checkpoint:      Optional[str] = None
     replay:               ReplayConfig = field(default_factory=ReplayConfig)
+    forward_only:         bool = False
 
 
 def config_from_dict(d: dict) -> TrainConfig:
@@ -281,6 +283,7 @@ class SelfPlayTrainer:
             device=str(self.device),
             epsilon=config.epsilon_start,
             seed=config.seed,
+            forward_only=config.forward_only,
         )
 
         # ── Load imitation pre-training checkpoint (warm start) ───────────────
@@ -422,7 +425,12 @@ class SelfPlayTrainer:
         while not env.is_terminal():
             player       = env.current_player
             board_before = env.board
-            real_moves   = env.legal_moves()
+            all_moves    = env.legal_moves()
+            real_moves   = (
+                filter_forward_moves(all_moves, player)
+                if self.config.forward_only
+                else all_moves
+            )
 
             # ── Canonical frame ───────────────────────────────────────────────
             canonical_moves = [
@@ -454,9 +462,15 @@ class SelfPlayTrainer:
             else:
                 next_player = env.current_player
                 next_state_arr = encode_state(board_after, next_player)
+                next_raw = env.legal_moves()
+                next_filtered = (
+                    filter_forward_moves(next_raw, next_player)
+                    if self.config.forward_only
+                    else next_raw
+                )
                 next_canonical = [
                     transform_move_for_player(m, next_player)
-                    for m in env.legal_moves()
+                    for m in next_filtered
                 ]
                 next_mask = legal_action_mask(next_canonical)
 

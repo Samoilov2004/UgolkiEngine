@@ -66,6 +66,13 @@ def parse_args() -> argparse.Namespace:
         default=Path("outputs/eval"),
         help="Directory to write CSV outputs.",
     )
+    parser.add_argument(
+        "--forward-only",
+        action="store_true",
+        default=False,
+        dest="forward_only",
+        help="Load the DQN checkpoint with forward-only move restriction.",
+    )
     return parser.parse_args()
 
 
@@ -83,7 +90,12 @@ def _build_agents(args: argparse.Namespace) -> list:
         if ckpt_path.exists():
             from corners_rl.agents.dqn_agent import DQNAgent
 
-            dqn = DQNAgent.load(ckpt_path, device=args.device, epsilon=0.0)
+            dqn = DQNAgent.load(
+                ckpt_path,
+                device=args.device,
+                epsilon=0.0,
+                forward_only=args.forward_only,
+            )
             agents.append(dqn)
             logging.info("Loaded DQNAgent from %s (epsilon=0.0)", ckpt_path)
         else:
