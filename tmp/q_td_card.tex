@@ -1,0 +1,137 @@
+\documentclass[varwidth=15cm, border=16pt]{standalone}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T2A]{fontenc}
+\usepackage[russian]{babel}
+\usepackage{amsmath, amssymb}
+\usepackage{xcolor}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta, positioning}
+\usepackage[most]{tcolorbox}
+
+% ── Palette ─────────────────────────────────────────────────────────────────
+\definecolor{cblue}{HTML}{2A529A}
+\definecolor{cbluelt}{HTML}{EBF1FB}
+\definecolor{camber}{HTML}{B37012}
+\definecolor{camberlt}{HTML}{FEF5E5}
+\definecolor{cdark}{HTML}{2B2D42}
+\definecolor{cgray}{HTML}{7A8A9E}
+\definecolor{cline}{HTML}{C8D4E4}
+
+\begin{document}
+
+\begin{tcolorbox}[
+  enhanced,
+  colback=white,
+  colframe=cline,
+  arc=9pt,
+  boxrule=1.2pt,
+  left=14pt, right=14pt, top=14pt, bottom=14pt,
+]
+
+%% ── Заголовок ────────────────────────────────────────────────────────────
+\noindent{\large\bfseries\color{cblue} Q-функция и TD-ошибка}
+
+\vspace{5pt}
+{\color{cline}\rule{\linewidth}{0.7pt}}
+\vspace{8pt}
+
+%% ── Блок Q-функции ───────────────────────────────────────────────────────
+\begin{tcolorbox}[
+  enhanced,
+  colback=cbluelt,
+  colframe=cblue,
+  arc=5pt,
+  boxrule=0.8pt,
+  coltitle=white,
+  colbacktitle=cblue,
+  fonttitle=\small\bfseries,
+  title=Что такое Q-функция?,
+  toptitle=4pt, bottomtitle=4pt,
+  top=9pt, bottom=7pt, left=10pt, right=10pt,
+]
+\[
+  Q(s,\,a)
+  \;=\;
+  \mathbb{E}\!\bigl[G_t \;\big|\; s_t = s,\; a_t = a\bigr],
+  \qquad
+  G_t \;=\; \sum_{k=0}^{\infty} \gamma^k\, r_{t+k}
+\]
+\vspace{1pt}
+{\small \textbf{Смысл:} $Q(s,a)$ — ожидаемая суммарная дисконтированная
+награда, если в состоянии $s$ выбрать действие $a$ и затем следовать
+текущей стратегии.}
+\end{tcolorbox}
+
+\vspace{8pt}
+
+%% ── Блок TD-ошибки ───────────────────────────────────────────────────────
+\begin{tcolorbox}[
+  enhanced,
+  colback=camberlt,
+  colframe=camber,
+  arc=5pt,
+  boxrule=0.8pt,
+  coltitle=white,
+  colbacktitle=camber,
+  fonttitle=\small\bfseries,
+  title=Что такое TD-ошибка?,
+  toptitle=4pt, bottomtitle=4pt,
+  top=9pt, bottom=7pt, left=10pt, right=10pt,
+]
+\[
+  \delta
+  \;=\;
+  \underbrace{r + \gamma \max_{a'} Q(s',a')}_{\displaystyle\text{новая оценка}}
+  \;-\;
+  \underbrace{Q(s,\,a)}_{\displaystyle\text{старая оценка}}
+\]
+\vspace{1pt}
+{\small \textbf{Смысл:} TD-ошибка — «удивление» агента: насколько
+реальный ход меняет его прогноз о ценности выбранного действия.}
+\end{tcolorbox}
+
+\vspace{12pt}
+
+%% ── Диаграмма перехода ───────────────────────────────────────────────────
+\begin{center}
+\begin{tikzpicture}[
+  font=\small,
+  box/.style={
+    draw=cblue!65, fill=cbluelt, rounded corners=5pt,
+    minimum width=2.45cm, minimum height=0.88cm,
+    align=center, line width=0.75pt, text=cdark,
+  },
+  arr/.style={-{Stealth[length=5pt, width=4pt]}, thick, cgray},
+]
+  \node[box] (s)   {$s$\\[2pt]{\scriptsize\color{cgray}состояние}};
+  \node[box, right=1.05cm of s]  (a)  {$a$\\[2pt]{\scriptsize\color{cgray}действие}};
+  \node[box, right=1.05cm of a]  (r)  {$r$\\[2pt]{\scriptsize\color{cgray}награда}};
+  \node[box, right=1.05cm of r]  (sp) {$s'$\\[2pt]{\scriptsize\color{cgray}след.\ сост.}};
+
+  \draw[arr] (s)  -- (a);
+  \draw[arr] (a)  -- (r);
+  \draw[arr] (r)  -- (sp);
+
+  \node[below=7pt of a, align=center, font=\scriptsize] {
+    {\color{cblue}\bfseries $Q(s,a)$}\\[1pt]{\color{cgray}старая оценка}
+  };
+  \node[below=7pt of sp, align=center, font=\scriptsize] {
+    {\color{camber}\bfseries $r+\gamma\max_{a'}Q(s',a')$}\\[1pt]{\color{cgray}новая цель}
+  };
+\end{tikzpicture}
+\end{center}
+
+\vspace{9pt}
+{\color{cline}\rule{\linewidth}{0.7pt}}
+\vspace{5pt}
+
+%% ── Итоговая заметка ─────────────────────────────────────────────────────
+{\small\color{cgray}%
+\textbf{\color{cblue}Связь с PER:}
+чем больше $|\delta|$, тем «удивительнее» переход —
+тем чаще он попадает в обучающий батч.}
+
+\end{tcolorbox}
+
+\end{document}
